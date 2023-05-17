@@ -25,7 +25,9 @@ type DoctorExecutor struct {
 
 func main() {
 	executor.Serve(map[string]plugin.Plugin{
-		"doctor": &executor.Plugin{},
+		"doctor": &executor.Plugin{
+			Executor: &DoctorExecutor{},
+		},
 	})
 }
 
@@ -43,7 +45,7 @@ func (d *DoctorExecutor) Metadata(context.Context) (api.MetadataOutput, error) {
        "properties": {
          "apiKey": {
            "description": "Open API Key",
-           "type": "string",
+           "type": "string"
          }
        },
        "additionalProperties": false
