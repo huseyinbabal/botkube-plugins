@@ -16,6 +16,7 @@ require (
 	cloud.google.com/go/storage v1.28.1 // indirect
 	github.com/PuerkitoBio/purell v1.1.1 // indirect
 	github.com/PuerkitoBio/urlesc v0.0.0-20170810143723-de5bf2ad4578 // indirect
+	github.com/PullRequestInc/go-gpt3 v1.1.15 // indirect
 	github.com/alexflint/go-arg v1.4.3 // indirect
 	github.com/alexflint/go-scalar v1.1.0 // indirect
 	github.com/avast/retry-go/v4 v4.3.3 // indirect
