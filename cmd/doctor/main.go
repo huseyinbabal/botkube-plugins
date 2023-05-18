@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"github.com/MakeNowJust/heredoc"
 	"github.com/PullRequestInc/go-gpt3"
@@ -9,9 +10,12 @@ import (
 	"github.com/kubeshop/botkube/pkg/api"
 	"github.com/kubeshop/botkube/pkg/api/executor"
 	"github.com/kubeshop/botkube/pkg/pluginx"
+	"regexp"
 	"strings"
 	"sync"
 )
+
+const promptTemplate = "Can you show me 3 possible kubectl commands to take an action after resource '%s' fails with error '%s'?"
 
 type Config struct {
 	ApiKey *string `yaml:"apiKey,omitempty"`
@@ -61,12 +65,16 @@ func (d *DoctorExecutor) Execute(ctx context.Context, in executor.ExecuteInput) 
 	if err != nil {
 		return executor.ExecuteOutput{}, fmt.Errorf("while merging input configuration: %w", err)
 	}
+	doctorParams, err := normalizeCommand(in.Command)
+	if err != nil {
+		return executor.ExecuteOutput{}, fmt.Errorf("while normalizing command: %w", err)
+	}
 	gpt := *d.getGptClient(&cfg)
 	sb := strings.Builder{}
 	err = gpt.CompletionStreamWithEngine(ctx,
 		gpt3.TextDavinci003Engine,
 		gpt3.CompletionRequest{
-			Prompt:      []string{in.Command},
+			Prompt:      []string{buildPrompt(doctorParams)},
 			MaxTokens:   gpt3.IntPtr(300),
 			Temperature: gpt3.Float32Ptr(0),
 		}, func(resp *gpt3.CompletionResponse) {
@@ -79,8 +87,24 @@ func (d *DoctorExecutor) Execute(ctx context.Context, in executor.ExecuteInput) 
 	}
 	response := sb.String()
 	response = strings.TrimLeft(response, "\n")
+	btnBuilder := api.NewMessageButtonBuilder()
+	var btns []api.Button
+	for _, s := range strings.Split(response, "\n") {
+		btns = append(btns, btnBuilder.ForCommandWithDescCmd("Choice 1", s, api.ButtonStylePrimary))
+	}
 	return executor.ExecuteOutput{
-		Message: api.NewCodeBlockMessage(response, true),
+		Message: api.Message{
+			BaseBody: api.Body{
+				Plaintext: "Possible actions",
+			},
+			Sections: []api.Section{
+				{
+					Buttons: btns,
+				},
+			},
+			OnlyVisibleForYou: false,
+			ReplaceOriginal:   false,
+		},
 	}, nil
 }
 
@@ -110,4 +134,35 @@ func (d *DoctorExecutor) getGptClient(cfg *Config) *gpt3.Client {
 		return &c
 	}
 	return d.gptClient
+}
+
+type DoctorParams struct {
+	Resource string
+	Error    string
+}
+
+func normalizeCommand(command string) (DoctorParams, error) {
+	pattern := `--(\w+)=([^\s]+)`
+	regex := regexp.MustCompile(pattern)
+	matches := regex.FindAllStringSubmatch(command, -1)
+	params := DoctorParams{}
+	for _, match := range matches {
+		key := match[1]
+		value := match[2]
+
+		switch key {
+		case "resource":
+			params.Resource = value
+		case "error":
+			params.Error = value
+		}
+	}
+	if params.Resource == "" || params.Error == "" {
+		return params, errors.New("invalid params")
+	}
+	return params, nil
+}
+
+func buildPrompt(p DoctorParams) string {
+	return fmt.Sprintf(promptTemplate, p.Resource, p.Error)
 }
