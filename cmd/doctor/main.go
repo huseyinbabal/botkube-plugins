@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"github.com/MakeNowJust/heredoc"
 	"github.com/PullRequestInc/go-gpt3"
@@ -65,10 +64,7 @@ func (d *DoctorExecutor) Execute(ctx context.Context, in executor.ExecuteInput) 
 	if err != nil {
 		return executor.ExecuteOutput{}, fmt.Errorf("while merging input configuration: %w", err)
 	}
-	doctorParams, err := normalizeCommand(in.Command)
-	if err != nil {
-		return executor.ExecuteOutput{}, fmt.Errorf("while normalizing command: %w", err)
-	}
+	doctorParams := normalizeCommand(in.Command)
 	gpt := *d.getGptClient(&cfg)
 	sb := strings.Builder{}
 	err = gpt.CompletionStreamWithEngine(ctx,
@@ -87,6 +83,12 @@ func (d *DoctorExecutor) Execute(ctx context.Context, in executor.ExecuteInput) 
 	}
 	response := sb.String()
 	response = strings.TrimLeft(response, "\n")
+	if doctorParams.IsRaw() {
+		return executor.ExecuteOutput{
+			Message: api.NewPlaintextMessage(response, true),
+		}, nil
+
+	}
 	btnBuilder := api.NewMessageButtonBuilder()
 	var btns []api.Button
 	for _, s := range strings.Split(response, "\n") {
@@ -138,15 +140,20 @@ func (d *DoctorExecutor) getGptClient(cfg *Config) *gpt3.Client {
 }
 
 type DoctorParams struct {
+	RawText  string
 	Resource string
 	Error    string
 }
 
-func normalizeCommand(command string) (DoctorParams, error) {
+func (p *DoctorParams) IsRaw() bool {
+	return p.Resource == "" || p.Error == ""
+}
+func normalizeCommand(command string) DoctorParams {
 	pattern := `--(\w+)=([^\s]+)`
 	regex := regexp.MustCompile(pattern)
 	matches := regex.FindAllStringSubmatch(command, -1)
 	params := DoctorParams{}
+	params.RawText = command
 	for _, match := range matches {
 		key := match[1]
 		value := match[2]
@@ -158,12 +165,12 @@ func normalizeCommand(command string) (DoctorParams, error) {
 			params.Error = value
 		}
 	}
-	if params.Resource == "" || params.Error == "" {
-		return params, errors.New("invalid params")
-	}
-	return params, nil
+	return params
 }
 
 func buildPrompt(p DoctorParams) string {
+	if p.IsRaw() {
+		return p.RawText
+	}
 	return fmt.Sprintf(promptTemplate, p.Resource, p.Error)
 }
