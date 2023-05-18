@@ -90,6 +90,7 @@ func (d *DoctorExecutor) Execute(ctx context.Context, in executor.ExecuteInput) 
 	btnBuilder := api.NewMessageButtonBuilder()
 	var btns []api.Button
 	for _, s := range strings.Split(response, "\n") {
+		s = strings.Join(strings.Split(s, "")[3:], "")
 		btns = append(btns, btnBuilder.ForCommandWithDescCmd("Choice 1", s, api.ButtonStylePrimary))
 	}
 	return executor.ExecuteOutput{
